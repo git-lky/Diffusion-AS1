@@ -4,7 +4,9 @@
 
 ## 架构概览
 
-![项目架构](structure.png)
+<p align="center">
+  <img src="structure.png" alt="项目架构">
+</p>
 
 ## 项目结构
 
