@@ -1,0 +1,7 @@
+# Checkpoints
+checkpoints*/
+# Python cache
+__pycache__/
+*.pyc
+# Logs
+logs/
