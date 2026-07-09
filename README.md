@@ -121,17 +121,6 @@ python sweep_gs.py
 | `sample_with_multi_guidance()` | CFG + classifier guidance（进度/边界/能量约束） |
 | `sample_multi_pick_best()` | 生成 20 条轨迹，选终点最近目标者 |
 
-## 实验版本
-
-| 目录 | 说明 |
-|---|---|
-| `checkpoints/` | 基线版本 |
-| `checkpoints1.0DiT/` | 主干切换为 DiT |
-| `checkpoints2.0_simple_action/` | 简化动作空间 |
-| `checkpoints2.1 PPOno CFG/` | PPO 数据，无 CFG |
-| `checkpoints2.2CFG/` | 引入 CFG 引导 |
-| `checkpoints2.3/` | PPO + CFG + pick-best 采样（当前推荐） |
-
 ## 评估指标
 
 `batch_test.py` 在 30 个随机场景上评估模型：
