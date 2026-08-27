@@ -1,0 +1,13 @@
+﻿# Checkpoints
+checkpoints*/
+# Python cache
+__pycache__/
+*.pyc
+# Logs
+logs/
+# Data files (too large for Git)
+data/trajectories/
+
+试验记录.docx
+
+structure.png

@@ -1,0 +1,132 @@
+nohup: 忽略输入
+Using device: cuda
+Epoch   0 | loss=0.330286 | time=10.2s
+Epoch   1 | loss=0.058759 | time=9.9s
+Epoch   2 | loss=0.038911 | time=9.9s
+Epoch   3 | loss=0.033362 | time=10.0s
+Epoch   4 | loss=0.029374 | time=10.0s
+Saved rolling checkpoint: ./checkpoints/checkpoint_latest.pt
+Epoch   5 | loss=0.027068 | time=10.0s
+Epoch   6 | loss=0.025022 | time=10.0s
+Epoch   7 | loss=0.024268 | time=10.0s
+Epoch   8 | loss=0.022825 | time=10.0s
+Epoch   9 | loss=0.022150 | time=10.0s
+Saved rolling checkpoint: ./checkpoints/checkpoint_latest.pt
+Epoch  10 | loss=0.020734 | time=10.1s
+Epoch  11 | loss=0.019822 | time=10.1s
+Epoch  12 | loss=0.019583 | time=10.1s
+Epoch  13 | loss=0.019150 | time=10.1s
+Epoch  14 | loss=0.018571 | time=10.1s
+Saved rolling checkpoint: ./checkpoints/checkpoint_latest.pt
+Epoch  15 | loss=0.018027 | time=10.1s
+Epoch  16 | loss=0.017610 | time=10.1s
+Epoch  17 | loss=0.016928 | time=10.1s
+Epoch  18 | loss=0.016102 | time=10.1s
+Epoch  19 | loss=0.016389 | time=10.1s
+Saved rolling checkpoint: ./checkpoints/checkpoint_latest.pt
+Epoch  20 | loss=0.015420 | time=10.1s
+Epoch  21 | loss=0.015072 | time=10.1s
+Epoch  22 | loss=0.015284 | time=10.1s
+Epoch  23 | loss=0.014871 | time=10.1s
+Epoch  24 | loss=0.015162 | time=10.1s
+Saved rolling checkpoint: ./checkpoints/checkpoint_latest.pt
+Epoch  25 | loss=0.014455 | time=10.1s
+Epoch  26 | loss=0.014289 | time=10.1s
+Epoch  27 | loss=0.013443 | time=10.1s
+Epoch  28 | loss=0.013673 | time=10.1s
+Epoch  29 | loss=0.013222 | time=10.1s
+Saved rolling checkpoint: ./checkpoints/checkpoint_latest.pt
+Epoch  30 | loss=0.013280 | time=10.1s
+Epoch  31 | loss=0.012593 | time=10.1s
+Epoch  32 | loss=0.012689 | time=10.1s
+Epoch  33 | loss=0.012312 | time=10.1s
+Epoch  34 | loss=0.012411 | time=10.1s
+Saved rolling checkpoint: ./checkpoints/checkpoint_latest.pt
+Epoch  35 | loss=0.012055 | time=10.1s
+Epoch  36 | loss=0.012273 | time=10.1s
+Epoch  37 | loss=0.011816 | time=10.1s
+Epoch  38 | loss=0.012046 | time=10.1s
+Epoch  39 | loss=0.011853 | time=10.1s
+Saved rolling checkpoint: ./checkpoints/checkpoint_latest.pt
+Epoch  40 | loss=0.012606 | time=10.1s
+Epoch  41 | loss=0.011484 | time=10.1s
+Epoch  42 | loss=0.011539 | time=10.1s
+Epoch  43 | loss=0.011155 | time=10.1s
+Epoch  44 | loss=0.011117 | time=10.1s
+Saved rolling checkpoint: ./checkpoints/checkpoint_latest.pt
+Epoch  45 | loss=0.010701 | time=10.1s
+Epoch  46 | loss=0.010736 | time=10.1s
+Epoch  47 | loss=0.011066 | time=10.1s
+Epoch  48 | loss=0.010746 | time=10.1s
+Epoch  49 | loss=0.010588 | time=10.1s
+Saved rolling checkpoint: ./checkpoints/checkpoint_latest.pt
+Epoch  50 | loss=0.010291 | time=10.1s
+Epoch  51 | loss=0.010437 | time=10.1s
+Epoch  52 | loss=0.010855 | time=10.1s
+Epoch  53 | loss=0.010455 | time=10.2s
+Epoch  54 | loss=0.010399 | time=10.2s
+Saved rolling checkpoint: ./checkpoints/checkpoint_latest.pt
+Epoch  55 | loss=0.010537 | time=10.1s
+Epoch  56 | loss=0.010403 | time=10.1s
+Epoch  57 | loss=0.010126 | time=10.1s
+Epoch  58 | loss=0.010313 | time=10.1s
+Epoch  59 | loss=0.010143 | time=10.1s
+Saved rolling checkpoint: ./checkpoints/checkpoint_latest.pt
+Epoch  60 | loss=0.010000 | time=10.2s
+Epoch  61 | loss=0.010171 | time=10.1s
+Epoch  62 | loss=0.009899 | time=10.1s
+Epoch  63 | loss=0.010050 | time=10.2s
+Epoch  64 | loss=0.009712 | time=10.2s
+Saved rolling checkpoint: ./checkpoints/checkpoint_latest.pt
+Epoch  65 | loss=0.009817 | time=10.1s
+Epoch  66 | loss=0.009580 | time=10.1s
+Epoch  67 | loss=0.009783 | time=10.1s
+Epoch  68 | loss=0.009520 | time=10.2s
+Epoch  69 | loss=0.009493 | time=10.1s
+Saved rolling checkpoint: ./checkpoints/checkpoint_latest.pt
+Epoch  70 | loss=0.009533 | time=10.1s
+Epoch  71 | loss=0.009353 | time=10.1s
+Epoch  72 | loss=0.009456 | time=10.1s
+Epoch  73 | loss=0.009090 | time=10.1s
+Epoch  74 | loss=0.009214 | time=10.1s
+Saved rolling checkpoint: ./checkpoints/checkpoint_latest.pt
+Epoch  75 | loss=0.009570 | time=10.1s
+Epoch  76 | loss=0.009107 | time=10.2s
+Epoch  77 | loss=0.009396 | time=10.1s
+Epoch  78 | loss=0.008734 | time=10.1s
+Epoch  79 | loss=0.009068 | time=10.2s
+Saved rolling checkpoint: ./checkpoints/checkpoint_latest.pt
+Epoch  80 | loss=0.008999 | time=10.1s
+Epoch  81 | loss=0.008956 | time=10.2s
+Epoch  82 | loss=0.008933 | time=10.1s
+Epoch  83 | loss=0.008957 | time=10.2s
+Epoch  84 | loss=0.008894 | time=10.2s
+Saved rolling checkpoint: ./checkpoints/checkpoint_latest.pt
+Epoch  85 | loss=0.009004 | time=10.1s
+Epoch  86 | loss=0.008710 | time=10.1s
+Epoch  87 | loss=0.008745 | time=10.1s
+Epoch  88 | loss=0.008985 | time=10.1s
+Epoch  89 | loss=0.008872 | time=10.1s
+Saved rolling checkpoint: ./checkpoints/checkpoint_latest.pt
+Epoch  90 | loss=0.008986 | time=10.2s
+Epoch  91 | loss=0.008936 | time=10.1s
+Epoch  92 | loss=0.008366 | time=10.2s
+Epoch  93 | loss=0.009016 | time=10.2s
+Epoch  94 | loss=0.008728 | time=10.1s
+Saved rolling checkpoint: ./checkpoints/checkpoint_latest.pt
+Epoch  95 | loss=0.008356 | time=10.1s
+Epoch  96 | loss=0.008544 | time=10.1s
+terminate called after throwing an instance of 'c10::Error'
+  what():  d.is_cuda() INTERNAL ASSERT FAILED at "../c10/cuda/impl/CUDAGuardImpl.h":53, please report a bug to PyTorch. 
+Exception raised from setDevice at ../c10/cuda/impl/CUDAGuardImpl.h:53 (most recent call first):
+frame #0: c10::Error::Error(c10::SourceLocation, std::string) + 0x96 (0x7fd00eec0446 in /home/descfly/anaconda3/envs/dit/lib/python3.10/site-packages/torch/lib/libc10.so)
+frame #1: c10::detail::torchCheckFail(char const*, char const*, unsigned int, char const*) + 0x68 (0x7fd00ee6a7ad in /home/descfly/anaconda3/envs/dit/lib/python3.10/site-packages/torch/lib/libc10.so)
+frame #2: <unknown function> + 0x22aaf (0x7fd00ef76aaf in /home/descfly/anaconda3/envs/dit/lib/python3.10/site-packages/torch/lib/libc10_cuda.so)
+frame #3: <unknown function> + 0x55bbd02 (0x7fd049b60d02 in /home/descfly/anaconda3/envs/dit/lib/python3.10/site-packages/torch/lib/libtorch_cpu.so)
+frame #4: torch::autograd::Engine::thread_main(std::shared_ptr<torch::autograd::GraphTask> const&) + 0xf5 (0x7fd049b6a785 in /home/descfly/anaconda3/envs/dit/lib/python3.10/site-packages/torch/lib/libtorch_cpu.so)
+frame #5: torch::autograd::Engine::thread_init(int, std::shared_ptr<torch::autograd::ReadyQueue> const&, bool) + 0x13f (0x7fd049b61b8f in /home/descfly/anaconda3/envs/dit/lib/python3.10/site-packages/torch/lib/libtorch_cpu.so)
+frame #6: torch::autograd::python::PythonEngine::thread_init(int, std::shared_ptr<torch::autograd::ReadyQueue> const&, bool) + 0x5c (0x7fd059a94bdc in /home/descfly/anaconda3/envs/dit/lib/python3.10/site-packages/torch/lib/libtorch_python.so)
+frame #7: <unknown function> + 0x145c0 (0x7fd0591ec5c0 in /home/descfly/anaconda3/envs/dit/lib/python3.10/site-packages/torch/lib/libtorch.so)
+frame #8: <unknown function> + 0x8609 (0x7fd05c1a9609 in /lib/x86_64-linux-gnu/libpthread.so.0)
+frame #9: clone + 0x43 (0x7fd05bf74353 in /lib/x86_64-linux-gnu/libc.so.6)
+

@@ -1,0 +1,41 @@
+nohup: 忽略输入
+Using device: cuda
+Epoch   0 | loss=0.330437 | time=10.2s
+Epoch   1 | loss=0.061062 | time=9.8s
+Epoch   2 | loss=0.038205 | time=9.8s
+Epoch   3 | loss=0.032437 | time=9.9s
+Epoch   4 | loss=0.028811 | time=9.9s
+Epoch   5 | loss=0.026221 | time=9.9s
+Epoch   6 | loss=0.025264 | time=9.9s
+Epoch   7 | loss=0.023194 | time=9.9s
+Epoch   8 | loss=0.021570 | time=9.9s
+Epoch   9 | loss=0.021356 | time=9.9s
+Epoch  10 | loss=0.020846 | time=9.9s
+Epoch  11 | loss=0.019721 | time=9.9s
+Epoch  12 | loss=0.018901 | time=10.0s
+Epoch  13 | loss=0.018429 | time=10.0s
+Epoch  14 | loss=0.017316 | time=10.0s
+Epoch  15 | loss=0.017183 | time=10.0s
+Epoch  16 | loss=0.016238 | time=10.0s
+Epoch  17 | loss=0.016644 | time=10.0s
+Epoch  18 | loss=0.016086 | time=10.0s
+Epoch  19 | loss=0.015417 | time=10.0s
+Epoch  20 | loss=0.014843 | time=10.0s
+Epoch  21 | loss=0.015184 | time=10.0s
+Epoch  22 | loss=0.014847 | time=10.0s
+Epoch  23 | loss=0.014192 | time=10.0s
+Epoch  24 | loss=0.013851 | time=10.0s
+Epoch  25 | loss=0.013540 | time=10.0s
+Epoch  26 | loss=0.013442 | time=10.0s
+Traceback (most recent call last):
+  File "/home/descfly/Diffusion-AS1/train.py", line 99, in <module>
+    main()
+  File "/home/descfly/Diffusion-AS1/train.py", line 61, in main
+    loss.backward()
+  File "/home/descfly/anaconda3/envs/dit/lib/python3.10/site-packages/torch/_tensor.py", line 521, in backward
+    torch.autograd.backward(
+  File "/home/descfly/anaconda3/envs/dit/lib/python3.10/site-packages/torch/autograd/__init__.py", line 289, in backward
+    _engine_run_backward(
+  File "/home/descfly/anaconda3/envs/dit/lib/python3.10/site-packages/torch/autograd/graph.py", line 769, in _engine_run_backward
+    return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+RuntimeError: d.is_cuda() INTERNAL ASSERT FAILED at "../c10/cuda/impl/CUDAGuardImpl.h":34, please report a bug to PyTorch. 
