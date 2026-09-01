@@ -64,7 +64,7 @@ tensorboard --logdir logs/
 python test.py
 
 # 批量测试 + 统计
-python batch_test.py --sampler ddim --steps 50 --cfg 2.0 --tests 30
+python batch_test.py --sampler ddpm --cfg 2.0 --tests 30 --seed 20260828
 
 # 搜索最优 guidance_scale
 python sweep_gs.py
@@ -120,7 +120,9 @@ python sweep_gs.py
 
 ## 评估指标
 
-`batch_test.py` 在 30 个随机场景上评估模型（可用 `--sampler/--steps/--cfg/--tests` 调整）：
+`batch_test.py` 在 30 个随机场景上评估模型（可用 `--sampler/--steps/--cfg/--tests/--seed` 调整）。最终模型应优先使用完整 DDPM 256 步；实测 DDIM 50 步会产生明显的轨迹跳跃和失真：
+
+最终固定种子30场景 DDPM评估成功率为 **90.0%（27/30）**，中位终点误差0.6km、平均路径334km；详细结果和采样器对照见 [`FINAL_EVALUATION.md`](FINAL_EVALUATION.md)。
 
 - **成功率**：终点误差 ≤ 15km 的比例
 - **平均误差** / **中位数误差**：终点到目标的距离

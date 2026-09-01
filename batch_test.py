@@ -20,11 +20,14 @@ WIND_FRAME_OFFSETS = config.WIND_FRAME_OFFSETS
 def parse_args():
     p = argparse.ArgumentParser(description="Batch test with grouping and multi-metrics")
     p.add_argument("--tests", type=int, default=30, help="number of random scenarios")
-    p.add_argument("--sampler", choices=["ddpm", "ddim"], default="ddim",
+    p.add_argument("--sampler", choices=["ddpm", "ddim"], default="ddpm",
                    help="denoising sampler: full DDPM (256 steps) or accelerated DDIM")
     p.add_argument("--steps", type=int, default=50, help="DDIM steps (used when --sampler ddim)")
     p.add_argument("--cfg", type=float, default=2.0, help="CFG guidance scale")
     p.add_argument("--candidates", type=int, default=5, help="candidate trajectories per scenario")
+    p.add_argument("--seed", type=int, default=None, help="random seed for reproducible scenarios")
+    p.add_argument("--output-dir", type=str, default=None,
+                   help="image output directory (default: checkpoints/batch_results)")
     return p.parse_args()
 
 def group_report(title, tags, group_names, all_dist, all_success, all_avg_speed, all_energy, all_path_len):
@@ -48,7 +51,7 @@ def group_report(title, tags, group_names, all_dist, all_success, all_avg_speed,
 def load_model(checkpoint_path, device):
     dit = create_denoiser().to(device)
     wind_encoder = (TemporalWindEncoder if config.WIND_NUM_FRAMES > 4 else WindEncoder)().to(device)
-    ckpt = torch.load(checkpoint_path, map_location=device)
+    ckpt = torch.load(checkpoint_path, map_location=device, weights_only=True)
     dit.load_state_dict(ckpt["dit"])
     wind_encoder.load_state_dict(ckpt["wind_encoder"])
     dit.eval(); wind_encoder.eval()
@@ -121,6 +124,13 @@ def compute_metrics(traj_np):
 
 def main():
     args = parse_args()
+    if args.seed is not None:
+        random.seed(args.seed)
+        np.random.seed(args.seed)
+        torch.manual_seed(args.seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(args.seed)
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ckpt_path = os.path.join(config.MODEL_SAVE_DIR, "model_final.pt")
     if not os.path.exists(ckpt_path):
@@ -129,7 +139,7 @@ def main():
     diffusion = load_model(ckpt_path, device)
     print(f"Model loaded ({device})")
 
-    img_dir = os.path.join(config.MODEL_SAVE_DIR, "batch_results")
+    img_dir = args.output_dir or os.path.join(config.MODEL_SAVE_DIR, "batch_results")
     os.makedirs(img_dir, exist_ok=True)
 
     # Generate wind fields

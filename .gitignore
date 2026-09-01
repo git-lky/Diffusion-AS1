@@ -5,9 +5,15 @@ __pycache__/
 *.pyc
 # Logs
 logs/
+*.log
+*.pid
 # Data files (too large for Git)
 data/trajectories/
 
 试验记录.docx
 
 structure.png
+
+专利/
+
+论文/

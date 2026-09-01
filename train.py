@@ -81,7 +81,10 @@ def main():
         if "torch_rng_state" in checkpoint:
             torch.set_rng_state(checkpoint["torch_rng_state"].cpu())
         if "cuda_rng_state_all" in checkpoint and torch.cuda.is_available():
-            torch.cuda.set_rng_state_all(checkpoint["cuda_rng_state_all"])
+            # map_location=device also moves serialized RNG states to CUDA,
+            # while set_rng_state_all requires CPU ByteTensors.
+            cuda_rng_states = [state.cpu() for state in checkpoint["cuda_rng_state_all"]]
+            torch.cuda.set_rng_state_all(cuda_rng_states)
         print(f"Resumed from {latest_path} at epoch {start_epoch}")
 
     for epoch in range(start_epoch, config.NUM_EPOCHS):
