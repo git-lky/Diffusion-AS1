@@ -9,6 +9,7 @@ logs/
 *.pid
 # Data files (too large for Git)
 data/trajectories/
+data/rolling_trajectories*/
 
 试验记录.docx
 
@@ -17,3 +18,5 @@ structure.png
 专利/
 
 论文/
+
+月报周报/

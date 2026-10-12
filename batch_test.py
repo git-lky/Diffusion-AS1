@@ -1,274 +1,320 @@
-"""Batch test with multi-trajectory visualization, wind field overlay and grouped metrics."""
-import os, sys, math, random, argparse
+"""Batch evaluation of complete rolling-horizon missions."""
+import argparse
+import csv
+import math
+import os
+import random
+import time
+
+os.environ.setdefault("MPLCONFIGDIR", "/tmp/diffusion_as1_mpl")
+os.environ.setdefault("XDG_CACHE_HOME", "/tmp/diffusion_as1_cache")
+
 import numpy as np
 import torch
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import config
-from models import create_denoiser
-from models.wind_encoder import WindEncoder, TemporalWindEncoder
-from models.diffusion import TrajectoryDiffusion
+from dynamics.rolling import sample_wind_numpy
 from dynamics.wind_field import WindGenerator
-from dynamics.memory import Memory_wind_field
+from rolling_planner import load_diffusion, run_rolling_planner, run_rule_planner
+from visualization import save_animation, save_diagnostic_plot, save_static_result
 
-NUM_CANDIDATES = 5
-WIND_FRAME_OFFSETS = config.WIND_FRAME_OFFSETS
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Batch test with grouping and multi-metrics")
-    p.add_argument("--tests", type=int, default=30, help="number of random scenarios")
-    p.add_argument("--sampler", choices=["ddpm", "ddim"], default="ddpm",
-                   help="denoising sampler: full DDPM (256 steps) or accelerated DDIM")
-    p.add_argument("--steps", type=int, default=50, help="DDIM steps (used when --sampler ddim)")
-    p.add_argument("--cfg", type=float, default=2.0, help="CFG guidance scale")
-    p.add_argument("--candidates", type=int, default=5, help="candidate trajectories per scenario")
-    p.add_argument("--seed", type=int, default=None, help="random seed for reproducible scenarios")
-    p.add_argument("--output-dir", type=str, default=None,
-                   help="image output directory (default: checkpoints/batch_results)")
-    return p.parse_args()
+    parser = argparse.ArgumentParser(description="Batch rolling-DiT mission evaluation")
+    parser.add_argument("--tests", type=int, default=30)
+    parser.add_argument("--sampler", choices=["ddpm", "ddim"], default="ddim")
+    parser.add_argument("--steps", type=int, default=50)
+    parser.add_argument("--cfg", type=float, default=2.0)
+    parser.add_argument("--candidates", type=int, default=config.INFERENCE_CANDIDATES)
+    parser.add_argument("--physics-guidance", type=float, default=config.PHYSICS_GUIDANCE_SCALE)
+    parser.add_argument("--seed", type=int, default=20260901)
+    parser.add_argument("--animate-first", action="store_true")
+    parser.add_argument(
+        "--animate-failures", action="store_true",
+        help="Create a GIF and diagnostic plot for every failed DiT mission",
+    )
+    parser.add_argument(
+        "--animate-tests", default="",
+        help="Comma-separated test IDs for which GIFs and diagnostic plots are created",
+    )
+    parser.add_argument(
+        "--compare-expert", action="store_true",
+        help="Evaluate the multi-route rule expert on the same scenarios",
+    )
+    parser.add_argument(
+        "--animate-representative",
+        action="store_true",
+        help=(
+            "Create GIFs and diagnostic plots for one median successful mission "
+            "and one median failed mission"
+        ),
+    )
+    parser.add_argument("--output-dir", default=os.path.join(config.MODEL_SAVE_DIR, "batch_rolling"))
+    return parser.parse_args()
 
-def group_report(title, tags, group_names, all_dist, all_success, all_avg_speed, all_energy, all_path_len):
-    """Print per-group success rate and metric means. tags align with per-test results."""
-    print(f"\n--- {title} ---")
-    print(f"{'group':10s} {'n':>3s} {'succ%':>6s} {'err_mean':>9s} {'err_med':>9s} "
-          f"{'speed':>6s} {'energy':>6s} {'path_km':>8s}")
-    for g in group_names:
-        idx = [i for i, t in enumerate(tags) if t == g]
-        if not idx:
-            print(f"{g:10s} {0:3d}")
+
+def sample_task(rng):
+    while True:
+        start = [rng.randint(20, config.WIDTH - 20), rng.randint(20, config.HEIGHT - 20)]
+        goal = [rng.randint(30, config.WIDTH - 30), rng.randint(30, config.HEIGHT - 30)]
+        dx = (start[0] - goal[0]) / config.WIDTH * config.WIDTH_KM
+        dy = (start[1] - goal[1]) / config.HEIGHT * config.HEIGHT_KM
+        distance = math.hypot(dx, dy)
+        if distance >= 80.0:
+            return start, goal, distance
+
+
+def wind_group(wind_u_frames, wind_v_frames, wind_start, start, goal):
+    """Classify average planning-window wind along the nominal route."""
+    scale = np.array([config.WIDTH, config.HEIGHT], dtype=np.float32)
+    start_norm = np.asarray(start, dtype=np.float32) / scale
+    goal_norm = np.asarray(goal, dtype=np.float32) / scale
+    route = (goal_norm - start_norm) * np.array(
+        [config.WIDTH_KM, config.HEIGHT_KM], dtype=np.float32
+    )
+    winds = []
+    for offset in range(config.TRAJ_LEN):
+        fraction = (offset + 1) / config.TRAJ_LEN
+        pos = start_norm + fraction * (goal_norm - start_norm)
+        u = wind_u_frames[wind_start + offset].squeeze().numpy()
+        v = wind_v_frames[wind_start + offset].squeeze().numpy()
+        winds.append([sample_wind_numpy(u, pos), sample_wind_numpy(v, pos)])
+    wind = np.mean(np.asarray(winds, dtype=np.float32), axis=0)
+    cosine = float(wind @ route / (np.linalg.norm(wind) * np.linalg.norm(route) + 1e-6))
+    return "tailwind" if cosine > 0.3 else "headwind" if cosine < -0.3 else "crosswind"
+
+
+def grouped_report(rows, field):
+    print(f"\n--- {field} ---")
+    for group in sorted({row[field] for row in rows}):
+        subset = [row for row in rows if row[field] == group]
+        print(
+            f"{group:16s} n={len(subset):3d} "
+            f"success={np.mean([r['success'] for r in subset]) * 100:5.1f}% "
+            f"error={np.mean([r['endpoint_error_km'] for r in subset]):7.1f}km "
+            f"energy={np.mean([r['final_energy'] for r in subset]) * 100:5.1f}%"
+        )
+
+
+def representative_indices(rows):
+    """Select non-extreme examples near the median endpoint error per outcome."""
+    selected = []
+    for success in (1, 0):
+        subset = [row for row in rows if row["success"] == success]
+        if not subset:
             continue
-        d = [all_dist[i] for i in idx]
-        s = [all_success[i] for i in idx]
-        sp = [all_avg_speed[i] for i in idx]
-        e = [all_energy[i] for i in idx]
-        pl = [all_path_len[i] for i in idx]
-        print(f"{g:10s} {len(idx):3d} {np.mean(s)*100:6.1f} {np.mean(d):9.1f} {np.median(d):9.1f} "
-              f"{np.mean(sp):6.1f} {np.mean(e)*100:6.0f} {np.mean(pl):8.0f}")
-
-def load_model(checkpoint_path, device):
-    dit = create_denoiser().to(device)
-    wind_encoder = (TemporalWindEncoder if config.WIND_NUM_FRAMES > 4 else WindEncoder)().to(device)
-    ckpt = torch.load(checkpoint_path, map_location=device, weights_only=True)
-    dit.load_state_dict(ckpt["dit"])
-    wind_encoder.load_state_dict(ckpt["wind_encoder"])
-    dit.eval(); wind_encoder.eval()
-    return TrajectoryDiffusion(dit, wind_encoder).to(device)
-
-def plot_multi_trajectory(all_trajs_np, best_traj_np, init_pos, target_pos,
-                           wind_u_frame, wind_v_frame, d_km, success, save_path, test_id):
-    """Plot all candidate trajectories (thin translucent) + best (thick) + wind quiver."""
-    fig, ax = plt.subplots(figsize=(8, 6))
-
-    # Wind field quiver (every other grid point for clarity)
-    step = 2
-    H, W = wind_u_frame.shape
-    Y, X = np.meshgrid(np.arange(0, H, step), np.arange(0, W, step), indexing='ij')
-    # Map wind grid coords to pixel coords
-    X_pix = (X + 0.5) * config.RANGE_SCALE
-    Y_pix = (Y + 0.5) * config.RANGE_SCALE
-    U = wind_u_frame[::step, ::step]
-    V = wind_v_frame[::step, ::step]
-    ax.quiver(X_pix, Y_pix, U, V, scale=100, width=0.003,
-              color='lightsteelblue', alpha=0.7, zorder=1)
-
-    # All candidate trajectories (thin translucent)
-    for k in range(all_trajs_np.shape[0]):
-        xs = all_trajs_np[k, 0] * config.WIDTH
-        ys = all_trajs_np[k, 1] * config.HEIGHT
-        ax.plot(xs, ys, '-', linewidth=0.6, alpha=0.35, color='steelblue', zorder=2)
-        # Endpoint dot
-        ax.plot(xs[-1], ys[-1], 'o', markersize=2.5, alpha=0.5, color='steelblue', zorder=2)
-
-    # Best trajectory (thick)
-    bxs = best_traj_np[0] * config.WIDTH
-    bys = best_traj_np[1] * config.HEIGHT
-    ax.plot(bxs, bys, '-', linewidth=2.0, color='darkblue', zorder=3, label='Best')
-    ax.plot(bxs[-1], bys[-1], 's', color='darkorange', markersize=7, zorder=4, label='Endpoint')
-
-    # Start / target
-    ax.plot(init_pos[0], init_pos[1], 'go', markersize=10, zorder=5, label='Start')
-    ax.plot(target_pos[0], target_pos[1], 'r*', markersize=14, zorder=5, label='Target')
-
-    # Arrival circle
-    r_pix = config.TARGET_RANGE / config.WIDTH_KM * config.WIDTH
-    circle = plt.Circle((target_pos[0], target_pos[1]), r_pix,
-                        color='r', fill=False, linestyle='--', linewidth=0.8, alpha=0.5, zorder=4)
-    ax.add_patch(circle)
-
-    status = "OK" if success else "FAIL"
-    ax.set_title(f"Test #{test_id}: {status} | Error: {d_km:.1f} km")
-    ax.set_xlim(0, config.WIDTH); ax.set_ylim(0, config.HEIGHT)
-    ax.set_xlabel("X (pixel)"); ax.set_ylabel("Y (pixel)")
-    ax.legend(loc='upper right', fontsize=7); ax.grid(True, alpha=0.3)
-    fig.tight_layout()
-    plt.savefig(save_path, dpi=150)
-    plt.close()
+        if success:
+            # Very short missions are not informative as the sole successful
+            # animation. Prefer medium/long routes when available.
+            informative = [row for row in subset if row["route_group"] != "short"]
+            if informative:
+                subset = informative
+        median_error = float(np.median([row["endpoint_error_km"] for row in subset]))
+        representative = min(
+            subset,
+            key=lambda row: (abs(row["endpoint_error_km"] - median_error), row["test"]),
+        )
+        selected.append(int(representative["test"]))
+    return selected
 
 
-def compute_metrics(traj_np):
-    """Compute extra metrics from a generated trajectory."""
-    xs = traj_np[0] * config.WIDTH
-    ys = traj_np[1] * config.HEIGHT
-    speeds = np.sqrt(traj_np[2]**2 + traj_np[3]**2) * config.MAX_SPEED
-    avg_speed = float(np.mean(speeds))
-    energy_end = float(traj_np[5, -1])
-    # Total distance along trajectory
-    dx = np.diff(xs); dy = np.diff(ys)
-    total_dist_pix = float(np.sum(np.sqrt(dx**2 + dy**2)))
-    total_dist_km = total_dist_pix / config.WIDTH * config.WIDTH_KM
-    return avg_speed, energy_end, total_dist_km
+def capture_rng_state(task_rng):
+    """Keep enough small RNG state to reproduce one scenario without its frames."""
+    return {
+        "python": random.getstate(),
+        "numpy": np.random.get_state(),
+        "torch": torch.get_rng_state(),
+        "cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
+        "task": task_rng.getstate(),
+    }
+
+
+def restore_rng_state(state, task_rng):
+    random.setstate(state["python"])
+    np.random.set_state(state["numpy"])
+    torch.set_rng_state(state["torch"])
+    if state["cuda"] is not None:
+        torch.cuda.set_rng_state_all(state["cuda"])
+    task_rng.setstate(state["task"])
 
 
 def main():
     args = parse_args()
-    if args.seed is not None:
-        random.seed(args.seed)
-        np.random.seed(args.seed)
-        torch.manual_seed(args.seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(args.seed)
+    try:
+        animation_tests = {
+            int(value.strip())
+            for value in args.animate_tests.split(",")
+            if value.strip()
+        }
+    except ValueError as error:
+        raise ValueError("--animate-tests must contain comma-separated integers") from error
+    invalid_animation_tests = sorted(
+        test_id for test_id in animation_tests if not 0 <= test_id < args.tests
+    )
+    if invalid_animation_tests:
+        raise ValueError(
+            f"animation test IDs outside 0..{args.tests - 1}: "
+            f"{invalid_animation_tests}"
+        )
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)
+    rng = random.Random(args.seed)
+    os.makedirs(args.output_dir, exist_ok=True)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    ckpt_path = os.path.join(config.MODEL_SAVE_DIR, "model_final.pt")
-    if not os.path.exists(ckpt_path):
-        print(f"No checkpoint at {ckpt_path}")
+    checkpoint = os.path.join(config.MODEL_SAVE_DIR, "model_final.pt")
+    if not os.path.exists(checkpoint):
+        print(f"No rolling checkpoint at {checkpoint}. Run python train.py first.")
         return
-    diffusion = load_model(ckpt_path, device)
-    print(f"Model loaded ({device})")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    diffusion = load_diffusion(checkpoint, device)
 
-    img_dir = args.output_dir or os.path.join(config.MODEL_SAVE_DIR, "batch_results")
-    os.makedirs(img_dir, exist_ok=True)
-
-    # Generate wind fields
-    wind_gen = WindGenerator(config.WIDTH, config.HEIGHT,
+    wind_generator = WindGenerator(
+        config.WIDTH, config.HEIGHT,
         config.WIND_MIN_AVE_V, config.WIND_MAX_AVE_V,
         config.WIND_VARY_SPEED, config.WIND_VARY_NUM,
-        10, 10, config.WIND_NUM_INP, config.RANGE_SCALE)
-    wind_buffer = Memory_wind_field(10)
-    for _ in range(10):
-        wx, wy, wvx, wvy = wind_gen.generate_wind_vector_list(config.WIND_HOURS)
-        wind_buffer.add_list(wx, wy, wvx, wvy)
+        10, 10, config.WIND_NUM_INP, config.RANGE_SCALE,
+    )
+    rows = []
+    expert_rows = []
+    scenario_states = [] if args.animate_representative else None
+    required = config.MAX_MISSION_STEPS + config.WIND_NUM_FRAMES + 1
+    print(
+        f"Testing {args.tests} rolling missions | {config.PLAN_HOURS}h prediction / "
+        f"{config.REPLAN_MINUTES}min execution | {args.sampler} | candidates={args.candidates}"
+    )
 
-    NUM_TESTS = args.tests
-    SAMPLER = args.sampler
-    DDIM_STEPS = args.steps
-    CFG_SCALE = args.cfg
-    NUM_CANDIDATES = args.candidates
-    distances_km = []
-    success_count = 0
-    all_init = []; all_target = []; all_dist = []; all_success = []
-    all_avg_speed = []; all_energy = []; all_path_len = []
-    all_dist_group = []; all_wind_group = []
+    for test_id in range(args.tests):
+        if scenario_states is not None:
+            scenario_states.append(capture_rng_state(rng))
+        wind_u, wind_v, _, _ = wind_generator.generate_wind_vector_list(config.WIND_HOURS)
+        wind_start = rng.randint(0, len(wind_u) - required)
+        start, goal, route_km = sample_task(rng)
+        start_time = rng.uniform(0.0, 24.0)
+        start_energy = rng.uniform(0.55, 1.0)
+        begin = time.time()
+        result = run_rolling_planner(
+            diffusion, wind_u, wind_v, start, goal,
+            wind_start=wind_start, start_time=start_time, start_energy=start_energy,
+            guidance_scale=args.cfg, candidates=args.candidates,
+            sampler=args.sampler, ddim_steps=args.steps,
+            physics_guidance_scale=args.physics_guidance, device=device,
+        )
+        elapsed = time.time() - begin
+        route_group = "short" if route_km < 150 else "medium" if route_km < 300 else "long"
+        row = {
+            "test": test_id,
+            "success": int(result.success),
+            "termination": result.termination,
+            "route_group": route_group,
+            "wind_group": wind_group(wind_u, wind_v, wind_start, start, goal),
+            "route_km": route_km,
+            "start_time": start_time,
+            "start_energy": start_energy,
+            "runtime_s": elapsed,
+            **result.metrics,
+        }
+        rows.append(row)
+        if args.compare_expert:
+            expert_begin = time.time()
+            expert_result = run_rule_planner(
+                wind_u, wind_v, start, goal,
+                wind_start=wind_start, start_time=start_time,
+                start_energy=start_energy,
+            )
+            expert_rows.append({
+                "test": test_id,
+                "success": int(expert_result.success),
+                "termination": expert_result.termination,
+                "route_group": route_group,
+                "wind_group": row["wind_group"],
+                "route_km": route_km,
+                "start_time": start_time,
+                "start_energy": start_energy,
+                "runtime_s": time.time() - expert_begin,
+                **expert_result.metrics,
+            })
+        status = "OK" if result.success else result.termination.upper()
+        stem = f"test_{test_id:03d}_{status}"
+        save_static_result(result, os.path.join(args.output_dir, stem + ".png"))
+        should_animate = (
+            (args.animate_first and test_id == 0)
+            or (args.animate_failures and not result.success)
+            or test_id in animation_tests
+        )
+        if should_animate:
+            save_animation(
+                result,
+                os.path.join(args.output_dir, stem + ".gif"),
+            )
+            save_diagnostic_plot(result, os.path.join(args.output_dir, stem + "_diagnostics.png"))
+        print(
+            f"{test_id:3d} {status:8s} error={row['endpoint_error_km']:7.1f}km "
+            f"energy={row['final_energy'] * 100:5.1f}% path={row['path_km']:7.1f}km "
+            f"replans={int(row['replans']):2d} runtime={elapsed:.1f}s"
+        )
 
-    print(f"\n=== Testing {NUM_TESTS} random scenarios ===")
-    print(f"Candidates: {NUM_CANDIDATES}   Sampler: {SAMPLER} ({DDIM_STEPS} steps if ddim)   CFG: {CFG_SCALE}")
-    print(f"{'#':>3s}  {'Init':>12s}  {'Target':>12s}  {'Error':>8s}  {'Speed':>6s}  {'Energy':>7s}  {'Result':>6s}")
-    print("-" * 67)
+    if args.animate_representative:
+        selected = representative_indices(rows)
+        print(f"\nCreating representative animations for tests: {selected}")
+        for test_id in selected:
+            restore_rng_state(scenario_states[test_id], rng)
+            wind_u, wind_v, _, _ = wind_generator.generate_wind_vector_list(config.WIND_HOURS)
+            wind_start = rng.randint(0, len(wind_u) - required)
+            start, goal, _ = sample_task(rng)
+            start_time = rng.uniform(0.0, 24.0)
+            start_energy = rng.uniform(0.55, 1.0)
+            result = run_rolling_planner(
+                diffusion, wind_u, wind_v, start, goal,
+                wind_start=wind_start, start_time=start_time, start_energy=start_energy,
+                guidance_scale=args.cfg, candidates=args.candidates,
+                sampler=args.sampler, ddim_steps=args.steps,
+                physics_guidance_scale=args.physics_guidance, device=device,
+            )
+            row = rows[test_id]
+            status = "OK" if row["success"] else row["termination"].upper()
+            stem = f"test_{test_id:03d}_{status}"
+            save_animation(result, os.path.join(args.output_dir, stem + ".gif"))
+            save_diagnostic_plot(
+                result,
+                os.path.join(args.output_dir, stem + "_diagnostics.png"),
+            )
 
-    for i in range(NUM_TESTS):
-        wx, wy, wvx, wvy = wind_buffer.get_list()
-        # Random start index for wind (not always 0)
-        max_start = len(wx) - 1 - max(config.TRAJ_LEN - 1, max(WIND_FRAME_OFFSETS))
-        wind_start = random.randint(0, max(int(max_start), 1))
+    csv_path = os.path.join(args.output_dir, "metrics.csv")
+    with open(csv_path, "w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
 
-        while True:
-            init_pos = [random.randint(20, config.WIDTH - 20),
-                        random.randint(20, config.HEIGHT - 20)]
-            target_pos = [random.randint(30, config.WIDTH - 30),
-                          random.randint(30, config.HEIGHT - 30)]
-            dist = math.sqrt((init_pos[0]-target_pos[0])**2 + (init_pos[1]-target_pos[1])**2)
-            if dist > 50:
-                break
+    if expert_rows:
+        expert_csv = os.path.join(args.output_dir, "expert_metrics.csv")
+        with open(expert_csv, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(expert_rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(expert_rows)
 
-        cond_np = np.array([
-            init_pos[0]/config.WIDTH, init_pos[1]/config.HEIGHT,
-            0.0, 0.0, config.START_TIME/24.0, config.START_ENERGY,
-            target_pos[0]/config.WIDTH, target_pos[1]/config.HEIGHT,
-        ], dtype=np.float32)
-        cond = torch.tensor(cond_np).unsqueeze(0).to(device)
+    print("\n=== Summary ===")
+    print(f"Success: {sum(r['success'] for r in rows)}/{len(rows)} = {np.mean([r['success'] for r in rows]) * 100:.1f}%")
+    print(f"Mean endpoint error: {np.mean([r['endpoint_error_km'] for r in rows]):.1f} km")
+    print(f"Mean final energy: {np.mean([r['final_energy'] for r in rows]) * 100:.1f}%")
+    print(f"Mean runtime: {np.mean([r['runtime_s'] for r in rows]):.1f} s/mission")
+    grouped_report(rows, "route_group")
+    grouped_report(rows, "wind_group")
+    if expert_rows:
+        print("\n=== Multi-route expert baseline ===")
+        print(
+            f"Success: {sum(r['success'] for r in expert_rows)}/{len(expert_rows)} = "
+            f"{np.mean([r['success'] for r in expert_rows]) * 100:.1f}%"
+        )
+        print(
+            f"Mean endpoint error: "
+            f"{np.mean([r['endpoint_error_km'] for r in expert_rows]):.1f} km"
+        )
+        grouped_report(expert_rows, "wind_group")
+    print(f"Results saved to {args.output_dir}")
 
-        # Route distance group (km)
-        route_pix = math.sqrt((init_pos[0]-target_pos[0])**2 + (init_pos[1]-target_pos[1])**2)
-        route_km = route_pix / config.WIDTH * config.WIDTH_KM
-        if route_km < 150: dist_group = "short(<150km)"
-        elif route_km < 300: dist_group = "mid(150-300)"
-        else: dist_group = "long(>300km)"
-
-        # 8-frame wind with random starting offset
-        frame_indices = [wind_start + o for o in WIND_FRAME_OFFSETS]
-        wind_u = torch.stack([wx[idx].float() for idx in frame_indices], dim=1).squeeze(2).to(device)
-        wind_v = torch.stack([wy[idx].float() for idx in frame_indices], dim=1).squeeze(2).to(device)
-
-        with torch.no_grad():
-            all_trajs, all_dist_t, best = diffusion.sample_multi(
-                cond, wind_u, wind_v, guidance_scale=CFG_SCALE, num_samples=NUM_CANDIDATES,
-                sampler=SAMPLER, ddim_steps=DDIM_STEPS)
-        traj_np = best[0].cpu().numpy()
-        all_trajs_np = all_trajs[0].cpu().numpy()
-
-        ex = traj_np[0, -1] * config.WIDTH
-        ey = traj_np[1, -1] * config.HEIGHT
-        d_pix = math.sqrt((ex-target_pos[0])**2 + (ey-target_pos[1])**2)
-        d_km = d_pix / config.WIDTH * config.WIDTH_KM
-        distances_km.append(d_km)
-        success = d_km <= config.TARGET_RANGE
-        if success: success_count += 1
-
-        avg_speed, energy_end, path_len = compute_metrics(traj_np)
-
-        all_init.append(init_pos); all_target.append(target_pos)
-        all_dist.append(d_km); all_success.append(success)
-        all_avg_speed.append(avg_speed); all_energy.append(energy_end)
-        all_path_len.append(path_len)
-        all_dist_group.append(dist_group)
-
-        # Wind vs route direction group at start point
-        wind_u_frame = wx[frame_indices[0]].squeeze().numpy()
-        wind_v_frame = wy[frame_indices[0]].squeeze().numpy()
-        gi = min(wind_u_frame.shape[0] - 1, max(0, int(init_pos[1] / config.RANGE_SCALE)))
-        gj = min(wind_u_frame.shape[1] - 1, max(0, int(init_pos[0] / config.RANGE_SCALE)))
-        w_vec = np.array([wind_u_frame[gi, gj], wind_v_frame[gi, gj]])
-        r_vec = np.array([target_pos[0] - init_pos[0], target_pos[1] - init_pos[1]])
-        cosang = float(w_vec @ r_vec / (np.linalg.norm(w_vec) * np.linalg.norm(r_vec) + 1e-6))
-        if cosang > 0.3: wind_group = "tailwind"
-        elif cosang < -0.3: wind_group = "headwind"
-        else: wind_group = "crosswind"
-        all_wind_group.append(wind_group)
-
-        # Wind quiver uses the first wind frame in the sampled set
-
-        status = "OK" if success else "FAIL"
-        img_name = f"test_{i:03d}_{status}_{d_km:.0f}km.png"
-        plot_multi_trajectory(all_trajs_np, traj_np, init_pos, target_pos,
-                              wind_u_frame, wind_v_frame, d_km, success,
-                              os.path.join(img_dir, img_name), i)
-
-        print(f"{i:3d}  ({init_pos[0]:3d},{init_pos[1]:3d})  ({target_pos[0]:3d},{target_pos[1]:3d})  "
-              f"{d_km:6.1f}km  {avg_speed:5.1f}m/s  {energy_end*100:5.0f}%   {status}")
-
-    print("-" * 67)
-    print(f"\n=== Summary ===")
-    print(f"Tests: {NUM_TESTS}")
-    print(f"Success rate: {success_count}/{NUM_TESTS} = {success_count/NUM_TESTS*100:.1f}%")
-    print(f"Mean error: {np.mean(distances_km):.1f} km  Median: {np.median(distances_km):.1f} km")
-    print(f"Min error: {np.min(distances_km):.1f} km   Max error: {np.max(distances_km):.1f} km")
-    print(f"Mean speed: {np.mean(all_avg_speed):.1f} m/s")
-    print(f"Mean remaining energy: {np.mean(all_energy)*100:.0f}%")
-    print(f"Mean path length: {np.mean(all_path_len):.0f} km")
-    group_report("Route distance groups", all_dist_group,
-                 ["short(<150km)", "mid(150-300)", "long(>300km)"],
-                 all_dist, all_success, all_avg_speed, all_energy, all_path_len)
-    group_report("Wind direction groups", all_wind_group,
-                 ["tailwind", "crosswind", "headwind"],
-                 all_dist, all_success, all_avg_speed, all_energy, all_path_len)
-    print(f"\nImages saved to: {img_dir}")
 
 if __name__ == "__main__":
     main()
-
-
-
-

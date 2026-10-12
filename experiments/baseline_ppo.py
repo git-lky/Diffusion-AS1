@@ -1,7 +1,7 @@
 """PPO baseline evaluation on the same fixed scenarios as run_ablation.
 
 Simulates the airship with the pretrained PPO policy (dynamics/ppo_policy.py)
-for TRAJ_LEN steps per scenario and reports endpoint error / success / speed /
+for the full mission horizon and reports endpoint error / success / speed /
 energy / path length, saved as CSV for comparison against the diffusion model.
 
 Usage:
@@ -51,7 +51,7 @@ def main():
     print("-" * 60)
     for i in range(args.scenarios):
         wx, wy, wvx, wvy = wind_buffer.get_list()
-        max_start = len(wx) - 1 - max(config.TRAJ_LEN - 1, max(config.WIND_FRAME_OFFSETS))
+        max_start = len(wx) - config.MAX_MISSION_STEPS - config.WIND_NUM_FRAMES - 1
         wind_start = rng.randint(0, max(max_start, 1))
         while True:
             init_pos = [rng.randint(20, config.WIDTH - 20), rng.randint(20, config.HEIGHT - 20)]
@@ -59,7 +59,7 @@ def main():
             if math.sqrt((init_pos[0]-target_pos[0])**2 + (init_pos[1]-target_pos[1])**2) > 50:
                 break
 
-        airship.start_time = config.START_TIME
+        airship.start_time = rng.uniform(0.0, 24.0)
         airship.reset(init_pos, target_pos)
         cur_as_state = np.array([
             airship.pos_state_normalize[0], airship.pos_state_normalize[1],
@@ -68,7 +68,7 @@ def main():
         pos_log = [np.array(init_pos, dtype=float)]
         speed_log = []
         h_comp, w_comp = wx[0].shape[1], wx[0].shape[2]
-        for step in range(config.TRAJ_LEN):
+        for step in range(config.MAX_MISSION_STEPS):
             wyi = min(h_comp - 1, max(0, int(airship.pos_state[1] / config.RANGE_SCALE)))
             wxi = min(w_comp - 1, max(0, int(airship.pos_state[0] / config.RANGE_SCALE)))
             wind_s = np.array([float(wx[wind_start+step][0, wyi, wxi]),
@@ -83,14 +83,20 @@ def main():
                 airship.time / 24.0, airship.energy], dtype=np.float32)
             pos_log.append(airship.pos_state.copy())
             speed_log.append(float(airship.real_speed))
+            dx_km = (airship.pos_state[0] - target_pos[0]) / config.WIDTH * config.WIDTH_KM
+            dy_km = (airship.pos_state[1] - target_pos[1]) / config.HEIGHT * config.HEIGHT_KM
+            if math.hypot(dx_km, dy_km) <= config.TARGET_RANGE:
+                break
 
         pos_log = np.array(pos_log)
         end = pos_log[-1]
-        d_pix = math.sqrt((end[0]-target_pos[0])**2 + (end[1]-target_pos[1])**2)
-        d_km = d_pix / config.WIDTH * config.WIDTH_KM
+        dx_km = (end[0] - target_pos[0]) / config.WIDTH * config.WIDTH_KM
+        dy_km = (end[1] - target_pos[1]) / config.HEIGHT * config.HEIGHT_KM
+        d_km = math.hypot(dx_km, dy_km)
         success = d_km <= config.TARGET_RANGE
-        dx = np.diff(pos_log[:, 0]); dy = np.diff(pos_log[:, 1])
-        path_km = np.sum(np.sqrt(dx**2 + dy**2)) / config.WIDTH * config.WIDTH_KM
+        dx = np.diff(pos_log[:, 0]) / config.WIDTH * config.WIDTH_KM
+        dy = np.diff(pos_log[:, 1]) / config.HEIGHT * config.HEIGHT_KM
+        path_km = np.sum(np.sqrt(dx**2 + dy**2))
         avg_speed = float(np.mean(speed_log)) if speed_log else 0.0
         rows.append(dict(scenario=i, err_km=d_km, success=float(success),
                          speed=avg_speed, energy=float(airship.energy), path_km=path_km))

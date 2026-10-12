@@ -5,6 +5,14 @@ import random
 # from scipy.interpolate import griddata
 import torch
 import torch.nn.functional as F
+import config
+
+
+def _limit_vector_magnitude(vector_x, vector_y, maximum):
+    """Limit a 2-D vector field by magnitude instead of per-axis clipping."""
+    magnitude = np.hypot(vector_x, vector_y)
+    scale = np.minimum(1.0, float(maximum) / np.maximum(magnitude, 1e-8))
+    return vector_x * scale, vector_y * scale
 
 #阵风团
 class gustElement:
@@ -175,11 +183,16 @@ class WindGenerator:
 
             # gust_wind_field_x = gust_wind_field_x_list.sum()
 
-        gust_wind_field_x = np.clip(gust_wind_field_x, -self.vary_speed, self.vary_speed)
-        gust_wind_field_y = np.clip(gust_wind_field_y, -self.vary_speed, self.vary_speed)
+        gust_wind_field_x, gust_wind_field_y = _limit_vector_magnitude(
+            gust_wind_field_x, gust_wind_field_y, self.vary_speed
+        )
 
         wind_field_x = wind_speed_array_x + gust_wind_field_x + np.random.uniform(-1, 1, (120, 210)) * 0.5
         wind_field_y = wind_speed_array_y + gust_wind_field_y + np.random.uniform(-1, 1, (120, 210)) * 0.5
+
+        wind_field_x, wind_field_y = _limit_vector_magnitude(
+            wind_field_x, wind_field_y, config.WIND_MAX_SPEED
+        )
 
         return wind_field_x, wind_field_y
 
@@ -243,13 +256,18 @@ class WindGenerator:
 
             # gust_wind_field_x = gust_wind_field_x_list.sum()
 
-        gust_wind_field_x = np.clip(gust_wind_field_x, -self.vary_speed, self.vary_speed)
-        gust_wind_field_y = np.clip(gust_wind_field_y, -self.vary_speed, self.vary_speed)
+        gust_wind_field_x, gust_wind_field_y = _limit_vector_magnitude(
+            gust_wind_field_x, gust_wind_field_y, self.vary_speed
+        )
 
         wind_field_x = wind_speed_array_x + gust_wind_field_x + \
                        np.random.uniform(-1, 1, (round(self.y_range / 10), round(self.x_range / 10))) * 0.5
         wind_field_y = wind_speed_array_y + gust_wind_field_y + \
                        np.random.uniform(-1, 1, (round(self.y_range / 10), round(self.x_range / 10))) * 0.5
+
+        wind_field_x, wind_field_y = _limit_vector_magnitude(
+            wind_field_x, wind_field_y, config.WIND_MAX_SPEED
+        )
 
         return wind_field_x, wind_field_y, wind_field_x.flatten(), wind_field_y.flatten()
 
@@ -299,8 +317,15 @@ class WindGenerator:
         for _ in range(hours):
             self.update_wind_field()
             wind_x_field_mini, wind_y_field_mini, wind_x_vector, wind_y_vector = self.generate_wind_field_vector()
-            wind_x_field_mini = torch.from_numpy(wind_x_field_mini).unsqueeze(0)
-            wind_y_field_mini = torch.from_numpy(wind_y_field_mini).unsqueeze(0)
+            # Own the tensor storage instead of sharing NumPy's allocation.
+            # The legacy from_numpy path intermittently corrupted the NumPy
+            # data capsule while many long wind sequences were cached.
+            wind_x_field_mini = torch.tensor(
+                wind_x_field_mini, dtype=torch.float32
+            ).unsqueeze(0)
+            wind_y_field_mini = torch.tensor(
+                wind_y_field_mini, dtype=torch.float32
+            ).unsqueeze(0)
             # wind_x_vector = torch.from_numpy(wind_x_vector).unsqueeze(0)
             # wind_y_vector = torch.from_numpy(wind_y_vector).unsqueeze(0)
             wind_x_vector_list.append(wind_x_vector)

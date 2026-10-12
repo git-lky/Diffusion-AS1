@@ -352,20 +352,13 @@ class ASUnit_low(object):
         # return as_state, current_time, current_energy, current_speed_real, current_speed, wind_s, speed
 
     def solar_energy(self, time):
-        energy = 0
-        if time > self.solar_time[0] and time < self.solar_time[1]:
-            energy = np.polyval(self.coef, time) * 1.2  # 用拟合的抛物线算，再放大 1.2 倍
-        return max(0.0, float(energy))  # 抛物线在 17-18 点间已过零，避免负太阳能
+        # 延迟导入可避免旧环境模块初始化时产生循环依赖。
+        from dynamics.rolling import solar_power_numpy
+        return solar_power_numpy(time)
 
     def step_energy(self, speed, time):
-        consumption_energy = (speed / self.max_speed) ** 3 * self.max_power + self.default_power
-        solar_energy = self.solar_energy(time)
-        self.energy = self.energy + (solar_energy - consumption_energy) * self.dt / 3600 / self.max_energy
-        if self.energy > 1:
-            self.energy = 1
-        if self.energy < 0:
-            self.energy = 0
-        # print("self.energy=", self.energy)
+        from dynamics.rolling import update_energy_numpy
+        self.energy = update_energy_numpy(self.energy, speed, time)
         return self.energy
 
     # 方法3：最安全的版本，确保所有情况都处理
@@ -405,6 +398,9 @@ class ASUnit_low(object):
             self.action_range = torch.tensor(self.action_range, dtype=torch.float32, device=self.action.device)
 
         self.action_real = self.action_range * self.action
+        action_norm = float(np.linalg.norm(self.action_real))
+        if action_norm > self.action_range:
+            self.action_real = self.action_real * (self.action_range / action_norm)
         self.speed += self.action_real.squeeze()
         # step for time
         self.time = self.time + self.dt / 3600
@@ -683,7 +679,6 @@ class ASUnit_low(object):
             print("创建图片目录失败：" + str(msg))
         plt.savefig(file_path + self.ID + "_state_plot.png")
         plt.show()
-
 
 
 

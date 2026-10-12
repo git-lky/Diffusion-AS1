@@ -1,5 +1,9 @@
 # Diffusion-AS1 最终模型评估报告
 
+> 本报告对应修改前的“32小时一次性生成”基线。新滚动DiT使用独立的
+> `data/rolling_trajectories_v3/` 和 `checkpoints_rolling/`，不会覆盖最初的
+> `checkpoints/model_final.pt` 基线。
+
 > 评估日期：2026-08-28  
 > 模型：`checkpoints/model_final.pt`（1000 Epoch EMA权重）
 
